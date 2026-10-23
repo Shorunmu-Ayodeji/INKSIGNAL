@@ -1,0 +1,41 @@
+{
+  "name": "inksignal",
+  "private": true,
+  "version": "0.1.0",
+  "description": "INKSIGNAL by 9thstreet — Your wallet. Your signal. Encrypted wallet-to-wallet messaging on Ink, powered by XMTP.",
+  "author": "9thstreet",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b"
+  },
+  "keywords": [
+    "inksignal",
+    "ink",
+    "xmtp",
+    "wagmi",
+    "viem",
+    "messaging"
+  ],
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.104.5",
+    "@xmtp/browser-sdk": "^7.1.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "viem": "^2.57.10",
+    "wagmi": "^3.7.9"
+  }
+}
