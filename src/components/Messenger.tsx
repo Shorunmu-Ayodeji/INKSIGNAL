@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
 import {
   summarizeReactions,
   useInbox,
@@ -8,8 +8,11 @@ import {
   type ReplyRef,
   type Thread,
 } from "../xmtp/useInbox";
-import { errorMessage, type XmtpClient } from "../xmtp/XmtpProvider";
+import { errorMessage, XMTP_ENV, type XmtpClient } from "../xmtp/XmtpProvider";
 import { shortAddress } from "../format";
+import { useAccount, useDisconnect } from "wagmi";
+import { ThemeToggle } from "./ThemeToggle";
+import { ink } from "../wagmi";
 
 import { CONTACT_NAME_MAX, useContactNames } from "../contacts";
 
@@ -29,47 +32,191 @@ function timeLabel(d: Date): string {
     : d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+function Avatar({ seed, label, size = 36 }: { seed: string; label: string; size?: number }) {
+  let hash = 0;
+  for (const ch of seed) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const initials = label.replace(/^0x/i, "").replace(/[^\p{L}\p{N}]/gu, "").slice(0, 2) || "?";
+  return (
+    <span
+      className="peer-avatar"
+      aria-hidden="true"
+      style={{
+        ["--avatar-size" as string]: `${size}px`,
+        background: `linear-gradient(135deg, hsl(${hash % 360} 65% 50%), hsl(${(hash + 40) % 360} 65% 38%))`,
+      }}
+    >
+      {initials}
+    </span>
+  );
+}
+
+function useReadMarkers(owner: string | undefined) {
+  const key = `inksignal:read:${owner ?? ""}`;
+  const [read, setRead] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(key) ?? "{}");
+    } catch {
+      return {};
+    }
+  });
+  function markRead(threadId: string, sentAtNs: bigint) {
+    setRead((prev) => {
+      if (prev[threadId] && BigInt(prev[threadId]) >= sentAtNs) return prev;
+      const next = { ...prev, [threadId]: sentAtNs.toString() };
+      try {
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch {
+        /* storage unavailable */
+      }
+      return next;
+    });
+  }
+  return { read, markRead };
+}
+
+function dayLabel(d: Date): string {
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: d.getFullYear() === today.getFullYear() ? undefined : "numeric" });
+}
+
 export function Messenger({ client }: { client: XmtpClient }) {
   const inbox = useInbox(client);
   const { names, setName } = useContactNames(client.accountIdentifier?.identifier);
+  const { read, markRead } = useReadMarkers(client.accountIdentifier?.identifier);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = inbox.threads.find((t) => t.id === selectedId) ?? null;
+  const selfInboxId = client.inboxId ?? "";
+  const { address: walletAddress, chainId } = useAccount();
+  const { disconnect } = useDisconnect();
+  const [tab, setTab] = useState<Tab>("chats");
+  const closeChat = useCallback(() => setSelectedId(null), []);
+  const [query, setQuery] = useState("");
+  const [composing, setComposing] = useState(false);
+  const needle = query.trim().toLowerCase();
+  const visibleThreads = needle
+    ? inbox.threads.filter((t) =>
+        [threadTitle(t, names), t.peerAddress ?? "", t.last?.text ?? ""].some((s) =>
+          s.toLowerCase().includes(needle),
+        ),
+      )
+    : inbox.threads;
+
+  useEffect(() => {
+    if (selected?.last) markRead(selected.id, selected.last.sentAtNs);
+  });
+
+  const unreadOf = (t: Thread): number => {
+    if (t.id === selectedId) return 0;
+    const readNs = read[t.id] ? BigInt(read[t.id]) : 0n;
+    return t.recent.filter((m) => m.senderInboxId !== selfInboxId && m.sentAtNs > readNs).length;
+  };
+  const unreadCount = inbox.threads.filter((t) => unreadOf(t) > 0).length;
+
+  useEffect(() => {
+    document.title = unreadCount > 0 ? `(${unreadCount}) INKSIGNAL` : "INKSIGNAL — Your wallet. Your signal.";
+    return () => {
+      document.title = "INKSIGNAL — Your wallet. Your signal.";
+    };
+  }, [unreadCount]);
 
   return (
-    <div className="messenger">
+    <div
+      className={`messenger${selected ? " messenger--chat" : ""}${tab !== "chats" ? " messenger--panel" : ""}`}
+    >
       <aside className="sidebar">
-        <Compose
-          lookup={inbox.lookup}
-          selfAddress={client.accountIdentifier?.identifier}
-          onOpen={async (address) => {
-            const thread = await inbox.openDm(address);
-            setSelectedId(thread.id);
-          }}
+        {walletAddress && (
+          <div className={`walletcard${chainId === ink.id ? " walletcard--ok" : ""}`}>
+            <span className="walletcard__icon" aria-hidden="true">{ICONS.wallet}</span>
+            <span className="walletcard__text">
+              <span className="walletcard__label">Connected</span>
+              <span className="walletcard__addr">{shortAddress(walletAddress)}</span>
+            </span>
+            <span className={`walletcard__net${chainId === ink.id ? " walletcard__net--ok" : ""}`}>
+              {chainId === ink.id ? "Ink" : "Wrong network"}
+            </span>
+          </div>
+        )}
+        <input
+          type="search"
+          className="input search"
+          placeholder="Search conversations…"
+          aria-label="Search conversations"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
         />
+        <button
+          type="button"
+          className="btn btn--primary newconv"
+          aria-expanded={composing}
+          onClick={() => setComposing((v) => !v)}
+        >
+          {composing ? "Close" : "＋ New conversation"}
+        </button>
+        {composing && (
+          <Compose
+            lookup={inbox.lookup}
+            selfAddress={client.accountIdentifier?.identifier}
+            onOpen={async (address) => {
+              const thread = await inbox.openDm(address);
+              setSelectedId(thread.id);
+              setComposing(false);
+            }}
+          />
+        )}
         <h2 className="sidebar__title">Conversations</h2>
         {inbox.error && <p className="note note--error">{inbox.error}</p>}
         {inbox.loading ? (
-          <p className="note">Syncing your inbox…</p>
+          <div className="skeletons" aria-busy="true" aria-label="Syncing your inbox">
+            {[0, 1, 2, 3].map((i) => (
+              <div className="skeleton-row" key={i}>
+                <span className="skeleton skeleton--circle" />
+                <span className="skeleton-lines">
+                  <span className="skeleton" />
+                  <span className="skeleton skeleton--short" />
+                </span>
+              </div>
+            ))}
+          </div>
         ) : inbox.threads.length === 0 ? (
-          <p className="note">No conversations yet. Look up a wallet address above to start one.</p>
+          <p className="note">No conversations yet. Tap “New conversation” to start one.</p>
+        ) : visibleThreads.length === 0 ? (
+          <p className="note">No conversations match “{query.trim()}”.</p>
         ) : (
           <ul className="threads">
-            {inbox.threads.map((t) => (
-              <li key={t.id}>
-                <button
-                  className={`thread${t.id === selectedId ? " thread--active" : ""}`}
-                  onClick={() => setSelectedId(t.id)}
-                >
-                  <span className="thread__top">
-                    <span className="thread__name" title={t.peerAddress}>
-                      {threadTitle(t, names)}
+            {visibleThreads.map((t) => {
+              const unread = unreadOf(t);
+              const title = threadTitle(t, names);
+              return (
+                <li key={t.id}>
+                  <button
+                    className={`thread${t.id === selectedId ? " thread--active" : ""}${unread ? " thread--unread" : ""}`}
+                    onClick={() => setSelectedId(t.id)}
+                    aria-label={unread ? `${title}, ${unread} unread` : undefined}
+                  >
+                    <Avatar seed={t.peerInboxId} label={names[t.peerInboxId] ?? t.peerAddress ?? title} size={44} />
+                    <span className="thread__body">
+                      <span className="thread__top">
+                        <span className="thread__name" title={t.peerAddress}>
+                          {title}
+                        </span>
+                        {t.last && <span className="thread__time">{timeLabel(t.last.sentAt)}</span>}
+                      </span>
+                      <span className="thread__preview">{t.last?.text ?? "No messages yet"}</span>
                     </span>
-                    {t.last && <span className="thread__time">{timeLabel(t.last.sentAt)}</span>}
-                  </span>
-                  <span className="thread__preview">{t.last?.text ?? "No messages yet"}</span>
-                </button>
-              </li>
-            ))}
+                    {unread > 0 && (
+                      <span className="thread__count" aria-hidden="true">
+                        {unread > 9 ? "9+" : unread}
+                      </span>
+                    )}
+                    <span className="thread__chevron" aria-hidden="true">›</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </aside>
@@ -87,6 +234,7 @@ export function Messenger({ client }: { client: XmtpClient }) {
             react={inbox.react}
             load={inbox.loadMessages}
             send={inbox.send}
+            onBack={closeChat}
           />
         ) : (
           <div className="chat__empty">
@@ -95,9 +243,155 @@ export function Messenger({ client }: { client: XmtpClient }) {
           </div>
         )}
       </section>
+
+      {tab !== "chats" && (
+        <section className="panel">
+          {tab === "contacts" && (
+            <>
+              <h2 className="panel__title">Contacts</h2>
+              {inbox.threads.filter((t) => names[t.peerInboxId]).length === 0 ? (
+                <p className="note">
+                  No saved contacts yet. Open a conversation and tap “Add name” to save one.
+                </p>
+              ) : (
+                <ul className="threads">
+                  {inbox.threads
+                    .filter((t) => names[t.peerInboxId])
+                    .sort((a, b) => names[a.peerInboxId].localeCompare(names[b.peerInboxId]))
+                    .map((t) => (
+                      <li key={t.id}>
+                        <button
+                          className="thread"
+                          onClick={() => {
+                            setSelectedId(t.id);
+                            setTab("chats");
+                          }}
+                        >
+                          <Avatar seed={t.peerInboxId} label={names[t.peerInboxId]} size={44} />
+                          <span className="thread__body">
+                            <span className="thread__name">{names[t.peerInboxId]}</span>
+                            <span className="thread__preview">
+                              {t.peerAddress ? shortAddress(t.peerAddress) : "Unknown address"}
+                            </span>
+                          </span>
+                          <span className="thread__chevron" aria-hidden="true">›</span>
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </>
+          )}
+          {tab === "discover" && (
+            <>
+              <h2 className="panel__title">Discover</h2>
+              <p className="note">
+                Finding people and communities in the Ink ecosystem is coming soon. For now, start a
+                chat from Chats with any wallet address.
+              </p>
+            </>
+          )}
+          {tab === "settings" && (
+            <>
+              <h2 className="panel__title">Settings</h2>
+              <div className="panel__row">
+                <span>Theme</span>
+                <ThemeToggle />
+              </div>
+              <div className="panel__row">
+                <span>Wallet</span>
+                <span className="panel__value">{walletAddress ? shortAddress(walletAddress) : "—"}</span>
+              </div>
+              <div className="panel__row">
+                <span>Network</span>
+                <span className="panel__value">{chainId === ink.id ? "Ink" : "Wrong network"}</span>
+              </div>
+              <div className="panel__row">
+                <span>Messaging</span>
+                <span className="panel__value">XMTP {XMTP_ENV}</span>
+              </div>
+              <button type="button" className="btn panel__danger" onClick={() => disconnect()}>
+                Disconnect wallet
+              </button>
+            </>
+          )}
+        </section>
+      )}
+
+      <nav className="tabbar" aria-label="Main">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={`tabbar__item${tab === t.id ? " tabbar__item--active" : ""}`}
+            aria-current={tab === t.id ? "page" : undefined}
+            onClick={() => setTab(t.id)}
+          >
+            <span className="tabbar__icon" aria-hidden="true">{ICONS[t.id]}</span>
+            {t.label}
+            {t.id === "chats" && unreadCount > 0 && (
+              <span className="tabbar__badge">{unreadCount > 9 ? "9+" : unreadCount}</span>
+            )}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }
+
+type Tab = "chats" | "contacts" | "discover" | "settings";
+
+const ICON_PROPS = {
+  width: 22,
+  height: 22,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.8,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+  "aria-hidden": true,
+};
+
+const ICONS: Record<Tab | "wallet", ReactElement> = {
+  chats: (
+    <svg {...ICON_PROPS}>
+      <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z" />
+    </svg>
+  ),
+  contacts: (
+    <svg {...ICON_PROPS}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
+    </svg>
+  ),
+  discover: (
+    <svg {...ICON_PROPS}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m15.5 8.5-2 5-5 2 2-5 5-2Z" />
+    </svg>
+  ),
+  settings: (
+    <svg {...ICON_PROPS}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+    </svg>
+  ),
+  wallet: (
+    <svg {...ICON_PROPS}>
+      <path d="M3 7a2 2 0 0 1 2-2h12v4" />
+      <path d="M3 7v11a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2Z" />
+      <circle cx="16.5" cy="14.5" r="1" />
+    </svg>
+  ),
+};
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "chats", label: "Chats" },
+  { id: "contacts", label: "Contacts" },
+  { id: "discover", label: "Discover" },
+  { id: "settings", label: "Settings" },
+];
 
 function Compose({
   lookup,
@@ -146,7 +440,7 @@ function Compose({
         <input
           id="recipient"
           className="input input--mono"
-          placeholder="Recipient wallet address (0x…)"
+          placeholder="Wallet address (0x…)"
           value={value}
           onChange={(e) => {
             setValue(e.target.value);
@@ -207,7 +501,9 @@ function ThreadView({
   react,
   load,
   send,
+  onBack,
 }: {
+  onBack: () => void;
   thread: Thread;
   names: Record<string, string>;
   setName: (contactId: string, name: string) => void;
@@ -235,6 +531,10 @@ function ThreadView({
     return threadTitle(thread, names);
   }
   const summary = useMemo(() => summarizeReactions(reactions), [reactions]);
+  const lastMineId = useMemo(
+    () => [...(messages ?? [])].reverse().find((m) => m.senderInboxId === selfInboxId)?.id,
+    [messages, selfInboxId],
+  );
 
   async function toggleReaction(m: ChatMessage, emoji: string) {
     setPickerFor(null);
@@ -257,6 +557,15 @@ function ThreadView({
       setError(errorMessage(err));
     }
   }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (e.key === "Escape" && !(target instanceof HTMLInputElement && target.value)) onBack();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onBack]);
 
   useEffect(() => {
     load(thread).catch((err) => setError(errorMessage(err)));
@@ -286,6 +595,17 @@ function ThreadView({
   return (
     <>
       <header className="chat__header">
+        <button className="chat__back" type="button" onClick={onBack} aria-label="Close conversation">
+          <span className="chat__back-m" aria-hidden="true">←</span>
+          <span className="chat__back-d" aria-hidden="true">✕</span>
+        </button>
+        <div className="chat__who">
+        <Avatar
+          seed={thread.peerInboxId}
+          label={nickname ?? thread.peerAddress ?? threadTitle(thread, names)}
+          size={40}
+        />
+        <div className="chat__whotext">
         {editingName ? (
           <form className="chat__nameform" onSubmit={saveNickname}>
             <input
@@ -317,19 +637,28 @@ function ThreadView({
           </div>
         )}
         {thread.peerAddress && <span className="chat__full">{thread.peerAddress}</span>}
+        </div>
+        </div>
       </header>
 
       <div className="chat__messages">
         {messages === undefined ? (
-          <p className="note">Loading messages…</p>
+          <div className="skeletons" aria-busy="true" aria-label="Loading messages">
+            <span className="skeleton skeleton--bubble" />
+            <span className="skeleton skeleton--bubble skeleton--right" />
+            <span className="skeleton skeleton--bubble" />
+          </div>
         ) : messages.length === 0 ? (
           <p className="note">No messages yet. Say hello — it will be end-to-end encrypted.</p>
         ) : (
-          messages.map((m) => {
+          messages.map((m, i) => {
             const mine = m.senderInboxId === selfInboxId;
             const chips = [...(summary.get(m.id) ?? [])];
+            const newDay = i === 0 || messages[i - 1].sentAt.toDateString() !== m.sentAt.toDateString();
             return (
-              <div key={m.id} id={`msg-${m.id}`} className={`msg${mine ? " msg--me" : ""}`}>
+              <Fragment key={m.id}>
+              {newDay && <div className="daysep">{dayLabel(m.sentAt)}</div>}
+              <div id={`msg-${m.id}`} className={`msg${mine ? " msg--me" : ""}`}>
                 <div className="msg__row">
                   <div className={`bubble${mine ? " bubble--me" : ""}`}>
                     {m.replyTo && (
@@ -340,7 +669,10 @@ function ThreadView({
                       />
                     )}
                     <p>{m.text}</p>
-                    <time>{timeLabel(m.sentAt)}</time>
+                    <time>
+                      {timeLabel(m.sentAt)}
+                      {mine && m.id === lastMineId && <span className="sent"> · ✓ Sent</span>}
+                    </time>
                   </div>
                   <button
                     className="picker__toggle"
@@ -394,6 +726,7 @@ function ThreadView({
                   </div>
                 )}
               </div>
+              </Fragment>
             );
           })
         )}

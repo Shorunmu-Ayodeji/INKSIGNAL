@@ -2,6 +2,7 @@ import { useAccount } from "wagmi";
 import { Brand } from "./components/Brand";
 import { AccountBar, ConnectOptions } from "./components/Wallet";
 import { Messenger } from "./components/Messenger";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { XMTP_ENV, useXmtp } from "./xmtp/XmtpProvider";
 
 function Gate() {
@@ -59,11 +60,15 @@ function Gate() {
 }
 
 export function App() {
+  const { isConnected } = useAccount();
   return (
     <div className="app">
       <header className="topbar">
         <Brand inverse />
-        <AccountBar />
+        <div className="topbar__actions">
+          {!isConnected && <ThemeToggle />}
+          <AccountBar />
+        </div>
       </header>
       <main className="main">
         <Gate />

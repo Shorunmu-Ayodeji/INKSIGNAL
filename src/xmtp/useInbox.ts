@@ -84,6 +84,7 @@ export interface Thread {
   peerInboxId: string;
   peerAddress?: string;
   last?: ChatMessage;
+  recent: ChatMessage[];
   createdAtNs: bigint;
 }
 
@@ -171,13 +172,15 @@ export function useInbox(client: XmtpClient) {
     async (dm: Dm): Promise<Thread> => {
       const peerInboxId = await dm.peerInboxId();
       const recent = await dm.messages({ limit: 20n, direction: SortDirection.Descending });
-      const last = recent.map(toChat).find((m): m is ChatMessage => m !== null);
+      const chats = recent.map(toChat).filter((m): m is ChatMessage => m !== null);
+      const last = chats[0];
       return {
         id: dm.id,
         dm,
         peerInboxId,
         peerAddress: addressCache.current.get(peerInboxId),
         last,
+        recent: chats,
         createdAtNs: dm.createdAtNs ?? 0n,
       };
     },
@@ -218,11 +221,11 @@ export function useInbox(client: XmtpClient) {
       const known = threadsRef.current.find((t) => t.id === m.conversationId);
       if (known) {
         commitThreads(
-          threadsRef.current.map((t) =>
-            t.id === known.id && (!t.last || chat.sentAtNs >= t.last.sentAtNs)
-              ? { ...t, last: chat }
-              : t,
-          ),
+          threadsRef.current.map((t) => {
+            if (t.id !== known.id) return t;
+            const recent = t.recent.some((r) => r.id === chat.id) ? t.recent : [chat, ...t.recent];
+            return !t.last || chat.sentAtNs >= t.last.sentAtNs ? { ...t, last: chat, recent } : { ...t, recent };
+          }),
         );
       } else {
         void refresh().catch((err) => setError(errorMessage(err)));
@@ -415,7 +418,9 @@ export function useInbox(client: XmtpClient) {
         [thread.id]: mergeMessages(prev[thread.id] ?? [], [chat]),
       }));
       commitThreads(
-        threadsRef.current.map((t) => (t.id === thread.id ? { ...t, last: chat } : t)),
+        threadsRef.current.map((t) =>
+          t.id === thread.id ? { ...t, last: chat, recent: [chat, ...t.recent] } : t,
+        ),
       );
     },
     [client, commitThreads],
