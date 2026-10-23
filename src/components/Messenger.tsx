@@ -88,7 +88,9 @@ export function Messenger({ client }: { client: XmtpClient }) {
   const { names, setName } = useContactNames(client.accountIdentifier?.identifier);
   const { read, markRead } = useReadMarkers(client.accountIdentifier?.identifier);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = inbox.threads.find((t) => t.id === selectedId) ?? null;
+  const selected =
+    inbox.threads.find((t) => t.id === selectedId) ?? inbox.requests.find((t) => t.id === selectedId) ?? null;
+  const selectedIsRequest = !!selected && inbox.requests.some((t) => t.id === selected.id);
   const selfInboxId = client.inboxId ?? "";
   const { address: walletAddress, chainId } = useAccount();
   const { disconnect } = useDisconnect();
@@ -167,6 +169,27 @@ export function Messenger({ client }: { client: XmtpClient }) {
             }}
           />
         )}
+        {inbox.requests.length > 0 && (
+          <section aria-label="Message requests">
+            <h2 className="sidebar__title">Message requests ({inbox.requests.length})</h2>
+            <ul className="threads">
+              {inbox.requests.map((t) => (
+                <li key={t.id}>
+                  <button
+                    className={`thread${t.id === selectedId ? " thread--active" : ""}`}
+                    onClick={() => setSelectedId(t.id)}
+                  >
+                    <Avatar seed={t.peerInboxId} label={t.peerAddress ?? threadTitle(t, names)} size={44} />
+                    <span className="thread__body">
+                      <span className="thread__name" title={t.peerAddress}>{threadTitle(t, names)}</span>
+                      <span className="thread__preview">{t.last?.text ?? "New request"}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         <h2 className="sidebar__title">Conversations</h2>
         {inbox.error && <p className="note note--error">{inbox.error}</p>}
         {inbox.loading ? (
@@ -235,6 +258,9 @@ export function Messenger({ client }: { client: XmtpClient }) {
             load={inbox.loadMessages}
             send={inbox.send}
             onBack={closeChat}
+            isRequest={selectedIsRequest}
+            onAccept={() => inbox.accept(selected).catch(() => undefined)}
+            onBlock={() => inbox.block(selected).then(closeChat).catch(() => undefined)}
           />
         ) : (
           <div className="chat__empty">
@@ -310,6 +336,19 @@ export function Messenger({ client }: { client: XmtpClient }) {
                 <span>Messaging</span>
                 <span className="panel__value">XMTP {XMTP_ENV}</span>
               </div>
+              <h3 className="panel__title">Blocked senders</h3>
+              {inbox.blocked.length === 0 ? (
+                <p className="note">No blocked senders.</p>
+              ) : (
+                inbox.blocked.map((t) => (
+                  <div className="panel__row" key={t.id}>
+                    <span title={t.peerAddress}>{threadTitle(t, names)}</span>
+                    <button type="button" className="btn" onClick={() => void inbox.unblock(t).catch(() => undefined)}>
+                      Unblock
+                    </button>
+                  </div>
+                ))
+              )}
               <button type="button" className="btn panel__danger" onClick={() => disconnect()}>
                 Disconnect wallet
               </button>
@@ -440,7 +479,7 @@ function Compose({
         <input
           id="recipient"
           className="input input--mono"
-          placeholder="Wallet address (0x…)"
+          placeholder="Wallet address (0x…) or ENS name"
           value={value}
           onChange={(e) => {
             setValue(e.target.value);
@@ -502,8 +541,14 @@ function ThreadView({
   load,
   send,
   onBack,
+  isRequest,
+  onAccept,
+  onBlock,
 }: {
   onBack: () => void;
+  isRequest: boolean;
+  onAccept: () => void;
+  onBlock: () => void;
   thread: Thread;
   names: Record<string, string>;
   setName: (contactId: string, name: string) => void;
@@ -733,6 +778,13 @@ function ThreadView({
         <div ref={endRef} />
       </div>
 
+      {isRequest ? (
+        <div className="note note--request" role="region" aria-label="Message request">
+          <p>This is a message request. Nothing is sent until you accept.</p>
+          <button type="button" className="btn btn--primary" onClick={onAccept}>Accept</button>{" "}
+          <button type="button" className="btn" onClick={onBlock}>Block</button>
+        </div>
+      ) : (
       <form className="composer" onSubmit={submit}>
         {replyingTo && (
           <div className="replybar">
@@ -765,6 +817,7 @@ function ThreadView({
           </button>
         </div>
       </form>
+      )}
     </>
   );
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ConsentState,
   ReactionAction,
   ReactionSchema,
   SortDirection,
@@ -13,6 +14,7 @@ import {
 import { isAddress } from "viem";
 import { errorMessage, type XmtpClient } from "./XmtpProvider";
 import { toIdentifier } from "./signer";
+import { isEnsName, resolveEns } from "./names";
 
 export interface ReplyRef {
   id: string;
@@ -86,12 +88,22 @@ export interface Thread {
   last?: ChatMessage;
   recent: ChatMessage[];
   createdAtNs: bigint;
+  consent: ConsentState;
 }
 
 export type LookupResult =
   | { state: "invalid"; message: string }
-  | { state: "unreachable"; address: string }
-  | { state: "reachable"; address: string };
+  | { state: "unreachable"; address: string; name?: string }
+  | { state: "reachable"; address: string; name?: string };
+
+// Allowed threads are the inbox; Unknown ones are message requests; Denied ones are hidden.
+export function partitionThreads(threads: Thread[]): { allowed: Thread[]; requests: Thread[]; blocked: Thread[] } {
+  return {
+    allowed: threads.filter((t) => t.consent === ConsentState.Allowed),
+    requests: threads.filter((t) => t.consent === ConsentState.Unknown),
+    blocked: threads.filter((t) => t.consent === ConsentState.Denied),
+  };
+}
 
 function textOf(m: DecodedMessage | null | undefined): string | undefined {
   if (!m) return undefined;
@@ -174,7 +186,9 @@ export function useInbox(client: XmtpClient) {
       const recent = await dm.messages({ limit: 20n, direction: SortDirection.Descending });
       const chats = recent.map(toChat).filter((m): m is ChatMessage => m !== null);
       const last = chats[0];
+      const consent = await dm.consentState();
       return {
+        consent,
         id: dm.id,
         dm,
         peerInboxId,
@@ -189,7 +203,9 @@ export function useInbox(client: XmtpClient) {
 
   const refresh = useCallback(async () => {
     await client.conversations.sync();
-    const dms = await client.conversations.listDms();
+    const dms = await client.conversations.listDms({
+      consentStates: [ConsentState.Allowed, ConsentState.Unknown, ConsentState.Denied],
+    });
     const peerIds = await Promise.all(dms.map((dm) => dm.peerInboxId()));
     await resolveAddresses(peerIds).catch(() => undefined);
     const built = await Promise.all(dms.map(buildThread));
@@ -324,16 +340,24 @@ export function useInbox(client: XmtpClient) {
 
   const lookup = useCallback(
     async (input: string): Promise<LookupResult> => {
-      const address = input.trim();
+      const raw = input.trim();
+      let address = raw;
+      let name: string | undefined;
+      if (isEnsName(raw)) {
+        const resolved = await resolveEns(raw);
+        if (!resolved) return { state: "invalid", message: `Could not resolve “${raw}” to a wallet address.` };
+        address = resolved;
+        name = raw;
+      }
       if (!isAddress(address)) {
         return {
           state: "invalid",
-          message: "Enter a valid 0x wallet address (checksummed addresses are verified).",
+          message: "Enter a valid 0x wallet address or an ENS name (e.g. name.eth).",
         };
       }
       const result = await client.canMessage([toIdentifier(address)]);
       const reachable = [...result.values()].some(Boolean);
-      return { state: reachable ? "reachable" : "unreachable", address };
+      return { state: reachable ? "reachable" : "unreachable", address, name };
     },
     [client],
   );
@@ -344,14 +368,29 @@ export function useInbox(client: XmtpClient) {
       const peerInboxId = await dm.peerInboxId();
       addressCache.current.set(peerInboxId, address.toLowerCase());
 
+      // Starting a conversation yourself is explicit consent.
+      await dm.updateConsentState(ConsentState.Allowed);
+
       const existing = threadsRef.current.find((t) => t.id === dm.id);
-      if (existing) return existing;
+      if (existing) {
+        const updated = { ...existing, consent: ConsentState.Allowed };
+        commitThreads(threadsRef.current.map((t) => (t.id === dm.id ? updated : t)));
+        return updated;
+      }
 
       const thread = await buildThread(dm);
       commitThreads([...threadsRef.current, thread]);
       return thread;
     },
     [client, buildThread, commitThreads],
+  );
+
+  const setConsent = useCallback(
+    async (thread: Thread, state: ConsentState) => {
+      await thread.dm.updateConsentState(state);
+      commitThreads(threadsRef.current.map((t) => (t.id === thread.id ? { ...t, consent: state } : t)));
+    },
+    [commitThreads],
   );
 
   const loadMessages = useCallback(async (thread: Thread) => {
@@ -426,5 +465,23 @@ export function useInbox(client: XmtpClient) {
     [client, commitThreads],
   );
 
-  return { threads, messages, reactions, loading, error, lookup, openDm, loadMessages, send, react };
+  const { allowed, requests, blocked } = partitionThreads(threads);
+
+  return {
+    threads: allowed,
+    requests,
+    blocked,
+    unblock: (t: Thread) => setConsent(t, ConsentState.Unknown),
+    messages,
+    reactions,
+    loading,
+    error,
+    lookup,
+    openDm,
+    loadMessages,
+    send,
+    react,
+    accept: (t: Thread) => setConsent(t, ConsentState.Allowed),
+    block: (t: Thread) => setConsent(t, ConsentState.Denied),
+  };
 }

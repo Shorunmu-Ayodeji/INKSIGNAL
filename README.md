@@ -11,6 +11,9 @@ INKSIGNAL is a wallet-to-wallet messaging MVP for the [Ink](https://inkonchain.c
 - **XMTP identity** created from a single wallet signature (no gas, no transaction). Returning users are restored from the local database without signing again.
 - **Recipient lookup by wallet address**: validates the address, then asks the XMTP network whether it can receive messages. Unreachable wallets are reported honestly, not faked.
 - **Real encrypted messaging**: send and receive text DMs, with live updates through XMTP streams and persistent history.
+- **Replies and reactions**: reply to a specific message (shown as a quote) and react with emoji; reactions can be toggled off and are aggregated per message.
+- **Message requests and consent**: DMs from people you haven't accepted appear under "Message requests". Accept to move them into Conversations, or Block to hide them. Starting a conversation yourself counts as consent. Consent is stored in XMTP, so it syncs across your installations. Block or unblock senders under Settings → Blocked senders; unblocking returns the sender to Message requests.
+- **ENS lookup**: type a `.eth` name instead of an address. Names are resolved read-only on Ethereum mainnet via viem's default public RPC, so the resolved address is what XMTP checks.
 
 ## Stack and verified versions
 
@@ -33,6 +36,7 @@ npm install
 npm run dev        # development server
 npm run build      # typecheck + production build
 npm run preview    # serve the production build
+npm test           # unit tests (vitest)
 ```
 
 Optional configuration (see [.env.example](./.env.example)):
@@ -40,6 +44,7 @@ Optional configuration (see [.env.example](./.env.example)):
 | Variable | Default | Description |
 |---|---|---|
 | `VITE_XMTP_ENV` | `production` | `production` or `dev`. Both sides of a conversation must use the same network. |
+| `VITE_ENS_RPC_URL` | viem public RPC | Ethereum mainnet RPC used only for ENS lookups. Set your own to avoid public rate limits. |
 
 To try it you need two wallets that have each enabled messaging in INKSIGNAL (or any XMTP app).
 
@@ -65,7 +70,7 @@ src/
 - **Installation limit:** XMTP allows 10 installations (browsers/devices) per wallet identity. Clearing site data and re-enabling counts as a new installation.
 - **Worker options:** the SDK runs in a Web Worker, so the client is configured with plain network options (`env`) instead of a pre-built `Backend` object, which cannot cross `postMessage`.
 - **Wallet types:** externally-owned accounts (EOA) are supported. Smart-contract wallets would need XMTP's SCW signer and are out of scope for this MVP.
-- **Text only:** other content types (attachments, reactions, groups) and consent management are not implemented.
+- **Text, replies and reactions only:** attachments, groups and read receipts are not implemented.
 - **Build warning:** Vite prints a `node:worker_threads` externalization warning from a wagmi dependency (`ox`). It is benign.
 
 ## Brand
@@ -84,4 +89,4 @@ The Ink mark in [public/brand/ink-icon.svg](./public/brand/ink-icon.svg) was dow
 
 ## Roadmap ideas
 
-Message requests and consent (allow/deny), group chats, ENS/Ink name lookup, read receipts, and smart-contract wallet support.
+Group chats, Ink-native name lookup, read receipts, unblock/manage blocked senders, and smart-contract wallet support.

@@ -4,7 +4,6 @@ export function Brand({ inverse = false }: { inverse?: boolean }) {
       <span className="ink-mark" role="img" aria-label="Ink" />
       <div className="brand__text">
         <span className="brand__name">INKSIGNAL</span>
-        <span className="brand__by">by 9thstreet</span>
       </div>
     </div>
   );

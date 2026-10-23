@@ -14,5 +14,7 @@ export default defineConfig({
   },
   build: {
     target: "esnext",
+    // The XMTP wasm bindings are inherently large; the JS chunk is the one that matters.
+    chunkSizeWarningLimit: 800,
   },
 });
