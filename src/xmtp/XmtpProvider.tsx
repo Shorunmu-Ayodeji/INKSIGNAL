@@ -35,8 +35,7 @@ interface XmtpContextValue {
 
 const XmtpContext = createContext<XmtpContextValue | null>(null);
 
-const registeredKey = (address: string) =>
-  `inksignal:registered:${XMTP_ENV}:${address.toLowerCase()}`;
+const registeredKey = (address: string) => `inksignal:registered:${XMTP_ENV}:${address.toLowerCase()}`;
 
 type CreateOptions = NonNullable<Parameters<typeof Client.create>[1]>;
 
@@ -175,10 +174,7 @@ export function XmtpProvider({ children }: { children: ReactNode }) {
     if (address) await start(address, "create");
   }, [address, start]);
 
-  const value = useMemo(
-    () => ({ client, status, error, enable }),
-    [client, status, error, enable],
-  );
+  const value = useMemo(() => ({ client, status, error, enable }), [client, status, error, enable]);
 
   return <XmtpContext.Provider value={value}>{children}</XmtpContext.Provider>;
 }

@@ -3,7 +3,14 @@ import { ConsentState } from "@xmtp/browser-sdk";
 import { partitionThreads, summarizeReactions, type ReactionEvent, type Thread } from "./useInbox";
 import { isEnsName } from "./names";
 
-const ev = (id: string, who: string, added: boolean, ns: number, emoji = "👍", messageId = "m1"): ReactionEvent => ({
+const ev = (
+  id: string,
+  who: string,
+  added: boolean,
+  ns: number,
+  emoji = "👍",
+  messageId = "m1",
+): ReactionEvent => ({
   id,
   messageId,
   senderInboxId: who,

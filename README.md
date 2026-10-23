@@ -37,6 +37,8 @@ npm run dev        # development server
 npm run build      # typecheck + production build
 npm run preview    # serve the production build
 npm test           # unit tests (vitest)
+npm run lint       # Biome lint
+npm run format     # Biome format (writes files)
 ```
 
 Optional configuration (see [.env.example](./.env.example)):
@@ -56,10 +58,15 @@ src/
   xmtp/
     signer.ts              adapts the connected wagmi wallet to XMTP's EOA signer
     XmtpProvider.tsx       client lifecycle: create / resume / teardown, single-tab lock
-    useInbox.ts            lookup, conversations, history, live stream, send
+    useInbox.ts            inbox hook: conversations, history, consent, send, react
+    inboxModel.ts          types and pure helpers (threads, reactions, message merging)
+    dmStream.ts            live DM stream with backoff reconnect and resync
+    lookup.ts              address / ENS lookup and reachability check
     tabLock.ts             Web Locks guard for the single-connection OPFS database
-  components/              Brand, Wallet, Messenger
+  components/              Brand, Wallet, Messenger, Compose
   App.tsx                  connect → enable messaging → inbox flow
+
+Tests live next to the code (`*.test.ts` / `*.test.tsx`). Linting and formatting use [Biome](https://biomejs.dev) (`biome.json`).
 ```
 
 ## Things worth knowing

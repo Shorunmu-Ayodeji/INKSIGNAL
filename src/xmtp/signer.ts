@@ -10,10 +10,7 @@ export function toIdentifier(address: string): Identifier {
 
 // Bridges the connected wagmi wallet to XMTP's EOA signer interface. The wallet
 // signs XMTP's registration text with personal_sign; no key ever leaves it.
-export function createWalletSigner(
-  address: Address,
-  signMessage: (message: string) => Promise<Hex>,
-): Signer {
+export function createWalletSigner(address: Address, signMessage: (message: string) => Promise<Hex>): Signer {
   return {
     type: "EOA",
     getIdentifier: () => toIdentifier(address),

@@ -9,12 +9,7 @@ export function ConnectOptions() {
   // Prefer wallets announced via EIP-6963; the generic `injected` connector is
   // only useful when a wallet exposes window.ethereum without announcing itself.
   const discovered = connectors.filter((c) => c.id !== "injected");
-  const options =
-    discovered.length > 0
-      ? discovered
-      : "ethereum" in window
-        ? connectors
-        : [];
+  const options = discovered.length > 0 ? discovered : "ethereum" in window ? connectors : [];
 
   if (options.length === 0) {
     return <p className="note">No browser wallet detected. Install a wallet extension and reload.</p>;
@@ -24,6 +19,7 @@ export function ConnectOptions() {
     <div className="connect-options">
       {options.map((connector) => (
         <button
+          type="button"
           key={connector.uid}
           className="btn btn--primary"
           disabled={isPending}
@@ -64,7 +60,17 @@ function avatarStyle(address: string) {
 
 function CopyIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <rect x="9" y="9" width="11" height="11" rx="2" />
       <path d="M5 15V6a2 2 0 0 1 2-2h9" />
     </svg>
@@ -73,7 +79,17 @@ function CopyIcon() {
 
 function CheckIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="m5 12.5 4.5 4.5L19 7.5" />
     </svg>
   );
@@ -170,6 +186,7 @@ export function AccountBar() {
   return (
     <div className="account" ref={rootRef}>
       <button
+        type="button"
         className="account__trigger"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="dialog"
@@ -178,7 +195,18 @@ export function AccountBar() {
         <span className={`dot${onInk ? " dot--ok" : " dot--warn"}`} aria-hidden="true" />
         <span className="avatar avatar--sm" style={avatarStyle(connectedAddress)} aria-hidden="true" />
         <span className="account__label">{name || shortAddress(connectedAddress)}</span>
-        <svg className={`caret${open ? " caret--open" : ""}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          className={`caret${open ? " caret--open" : ""}`}
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
@@ -199,13 +227,17 @@ export function AccountBar() {
                     aria-label="Display name"
                     autoFocus
                   />
-                  <button className="menu__link menu__link--strong" type="submit">Save</button>
-                  <button className="menu__link" type="button" onClick={() => setEditing(false)}>Cancel</button>
+                  <button className="menu__link menu__link--strong" type="submit">
+                    Save
+                  </button>
+                  <button className="menu__link" type="button" onClick={() => setEditing(false)}>
+                    Cancel
+                  </button>
                 </form>
               ) : (
                 <>
                   <span className="menu__name">{name || "Unnamed wallet"}</span>
-                  <button className="menu__link" onClick={startEditing}>
+                  <button className="menu__link" type="button" onClick={startEditing}>
                     {name ? "Edit name" : "Set a display name"}
                   </button>
                 </>
@@ -215,7 +247,12 @@ export function AccountBar() {
 
           <div className="menu__section">
             <span className="menu__caption">Address</span>
-            <button className="menu__address" onClick={() => void copyAddress()} title="Copy address">
+            <button
+              className="menu__address"
+              type="button"
+              onClick={() => void copyAddress()}
+              title="Copy address"
+            >
               <span>{connectedAddress}</span>
               <span className={`menu__copy${copied ? " menu__copy--done" : ""}`}>
                 {copied ? <CheckIcon /> : <CopyIcon />}
@@ -234,6 +271,7 @@ export function AccountBar() {
             </div>
             {!onInk && (
               <button
+                type="button"
                 className="menu__pill"
                 disabled={switching}
                 onClick={() => switchChain({ chainId: ink.id })}
@@ -251,12 +289,14 @@ export function AccountBar() {
           </div>
 
           {(error || switchError) && (
-            <p className="menu__error" role="alert">{error ?? switchError?.message}</p>
+            <p className="menu__error" role="alert">
+              {error ?? switchError?.message}
+            </p>
           )}
 
           <p className="menu__hint">Your name is stored on this device only and isn’t shared.</p>
 
-          <button className="menu__disconnect" onClick={() => disconnect()}>
+          <button className="menu__disconnect" type="button" onClick={() => disconnect()}>
             Disconnect
           </button>
         </div>

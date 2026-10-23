@@ -14,8 +14,8 @@ function Gate() {
       <div className="hero">
         <h1>Your wallet. Your signal.</h1>
         <p>
-          End-to-end encrypted, wallet-to-wallet messaging for the Ink ecosystem. Connect a
-          wallet, look up any address, and talk — no accounts, no phone numbers.
+          End-to-end encrypted, wallet-to-wallet messaging for the Ink ecosystem. Connect a wallet, look up
+          any address, and talk — no accounts, no phone numbers.
         </p>
         <ConnectOptions />
       </div>
@@ -37,8 +37,8 @@ function Gate() {
         <>
           <h2>INKSIGNAL is open in another tab</h2>
           <p>
-            Your encrypted local database can only be used by one tab at a time. Close the other
-            tab, then reload this page.
+            Your encrypted local database can only be used by one tab at a time. Close the other tab, then
+            reload this page.
           </p>
         </>
       )}
@@ -46,11 +46,11 @@ function Gate() {
         <>
           <h2>Enable secure messaging</h2>
           <p>
-            Sign one message with your wallet to create your XMTP identity ({XMTP_ENV} network).
-            It costs no gas and sends no transaction.
+            Sign one message with your wallet to create your XMTP identity ({XMTP_ENV} network). It costs no
+            gas and sends no transaction.
           </p>
           {error && <p className="note note--error">{error}</p>}
-          <button className="btn btn--primary" onClick={() => void enable()}>
+          <button className="btn btn--primary" type="button" onClick={() => void enable()}>
             {status === "error" ? "Try again" : "Enable messaging"}
           </button>
         </>
@@ -74,8 +74,8 @@ export function App() {
         <Gate />
       </main>
       <footer className="footer">
-        INKSIGNAL by 9thstreet · Messages are encrypted and delivered over XMTP · Ink is the
-        wallet network, nothing is written on-chain
+        INKSIGNAL by 9thstreet · Messages are encrypted and delivered over XMTP · Ink is the wallet network,
+        nothing is written on-chain
       </footer>
     </div>
   );

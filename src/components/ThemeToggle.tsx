@@ -57,7 +57,9 @@ export function ThemeToggle() {
           title={LABELS[m]}
           onClick={() => choose(m)}
         >
-          <span aria-hidden="true" className="theme-toggle__icon">{ICONS[m]}</span>
+          <span aria-hidden="true" className="theme-toggle__icon">
+            {ICONS[m]}
+          </span>
           <span className="theme-toggle__label">{LABELS[m]}</span>
         </button>
       ))}

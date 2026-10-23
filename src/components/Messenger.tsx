@@ -1,17 +1,20 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   summarizeReactions,
   useInbox,
   type ChatMessage,
-  type LookupResult,
   type ReactionEvent,
-  type ReplyRef,
   type Thread,
 } from "../xmtp/useInbox";
 import { errorMessage, XMTP_ENV, type XmtpClient } from "../xmtp/XmtpProvider";
 import { shortAddress } from "../format";
 import { useAccount, useDisconnect } from "wagmi";
 import { ThemeToggle } from "./ThemeToggle";
+import { Avatar } from "./Avatar";
+import { Compose } from "./Compose";
+import { ICONS, TABS, type Tab } from "./icons";
+import { QuoteBlock } from "./QuoteBlock";
+import { useReadMarkers } from "./useReadMarkers";
 import { ink } from "../wagmi";
 
 import { CONTACT_NAME_MAX, useContactNames } from "../contacts";
@@ -32,55 +35,18 @@ function timeLabel(d: Date): string {
     : d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-function Avatar({ seed, label, size = 36 }: { seed: string; label: string; size?: number }) {
-  let hash = 0;
-  for (const ch of seed) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  const initials = label.replace(/^0x/i, "").replace(/[^\p{L}\p{N}]/gu, "").slice(0, 2) || "?";
-  return (
-    <span
-      className="peer-avatar"
-      aria-hidden="true"
-      style={{
-        ["--avatar-size" as string]: `${size}px`,
-        background: `linear-gradient(135deg, hsl(${hash % 360} 65% 50%), hsl(${(hash + 40) % 360} 65% 38%))`,
-      }}
-    >
-      {initials}
-    </span>
-  );
-}
-
-function useReadMarkers(owner: string | undefined) {
-  const key = `inksignal:read:${owner ?? ""}`;
-  const [read, setRead] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(key) ?? "{}");
-    } catch {
-      return {};
-    }
-  });
-  function markRead(threadId: string, sentAtNs: bigint) {
-    setRead((prev) => {
-      if (prev[threadId] && BigInt(prev[threadId]) >= sentAtNs) return prev;
-      const next = { ...prev, [threadId]: sentAtNs.toString() };
-      try {
-        localStorage.setItem(key, JSON.stringify(next));
-      } catch {
-        /* storage unavailable */
-      }
-      return next;
-    });
-  }
-  return { read, markRead };
-}
-
 function dayLabel(d: Date): string {
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(today.getDate() - 1);
   if (d.toDateString() === today.toDateString()) return "Today";
   if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: d.getFullYear() === today.getFullYear() ? undefined : "numeric" });
+  return d.toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: d.getFullYear() === today.getFullYear() ? undefined : "numeric",
+  });
 }
 
 export function Messenger({ client }: { client: XmtpClient }) {
@@ -132,7 +98,9 @@ export function Messenger({ client }: { client: XmtpClient }) {
       <aside className="sidebar">
         {walletAddress && (
           <div className={`walletcard${chainId === ink.id ? " walletcard--ok" : ""}`}>
-            <span className="walletcard__icon" aria-hidden="true">{ICONS.wallet}</span>
+            <span className="walletcard__icon" aria-hidden="true">
+              {ICONS.wallet}
+            </span>
             <span className="walletcard__text">
               <span className="walletcard__label">Connected</span>
               <span className="walletcard__addr">{shortAddress(walletAddress)}</span>
@@ -176,12 +144,15 @@ export function Messenger({ client }: { client: XmtpClient }) {
               {inbox.requests.map((t) => (
                 <li key={t.id}>
                   <button
+                    type="button"
                     className={`thread${t.id === selectedId ? " thread--active" : ""}`}
                     onClick={() => setSelectedId(t.id)}
                   >
                     <Avatar seed={t.peerInboxId} label={t.peerAddress ?? threadTitle(t, names)} size={44} />
                     <span className="thread__body">
-                      <span className="thread__name" title={t.peerAddress}>{threadTitle(t, names)}</span>
+                      <span className="thread__name" title={t.peerAddress}>
+                        {threadTitle(t, names)}
+                      </span>
                       <span className="thread__preview">{t.last?.text ?? "New request"}</span>
                     </span>
                   </button>
@@ -216,11 +187,16 @@ export function Messenger({ client }: { client: XmtpClient }) {
               return (
                 <li key={t.id}>
                   <button
+                    type="button"
                     className={`thread${t.id === selectedId ? " thread--active" : ""}${unread ? " thread--unread" : ""}`}
                     onClick={() => setSelectedId(t.id)}
                     aria-label={unread ? `${title}, ${unread} unread` : undefined}
                   >
-                    <Avatar seed={t.peerInboxId} label={names[t.peerInboxId] ?? t.peerAddress ?? title} size={44} />
+                    <Avatar
+                      seed={t.peerInboxId}
+                      label={names[t.peerInboxId] ?? t.peerAddress ?? title}
+                      size={44}
+                    />
                     <span className="thread__body">
                       <span className="thread__top">
                         <span className="thread__name" title={t.peerAddress}>
@@ -235,7 +211,9 @@ export function Messenger({ client }: { client: XmtpClient }) {
                         {unread > 9 ? "9+" : unread}
                       </span>
                     )}
-                    <span className="thread__chevron" aria-hidden="true">›</span>
+                    <span className="thread__chevron" aria-hidden="true">
+                      ›
+                    </span>
                   </button>
                 </li>
               );
@@ -260,7 +238,12 @@ export function Messenger({ client }: { client: XmtpClient }) {
             onBack={closeChat}
             isRequest={selectedIsRequest}
             onAccept={() => inbox.accept(selected).catch(() => undefined)}
-            onBlock={() => inbox.block(selected).then(closeChat).catch(() => undefined)}
+            onBlock={() =>
+              inbox
+                .block(selected)
+                .then(closeChat)
+                .catch(() => undefined)
+            }
           />
         ) : (
           <div className="chat__empty">
@@ -287,6 +270,7 @@ export function Messenger({ client }: { client: XmtpClient }) {
                     .map((t) => (
                       <li key={t.id}>
                         <button
+                          type="button"
                           className="thread"
                           onClick={() => {
                             setSelectedId(t.id);
@@ -300,7 +284,9 @@ export function Messenger({ client }: { client: XmtpClient }) {
                               {t.peerAddress ? shortAddress(t.peerAddress) : "Unknown address"}
                             </span>
                           </span>
-                          <span className="thread__chevron" aria-hidden="true">›</span>
+                          <span className="thread__chevron" aria-hidden="true">
+                            ›
+                          </span>
                         </button>
                       </li>
                     ))}
@@ -312,8 +298,8 @@ export function Messenger({ client }: { client: XmtpClient }) {
             <>
               <h2 className="panel__title">Discover</h2>
               <p className="note">
-                Finding people and communities in the Ink ecosystem is coming soon. For now, start a
-                chat from Chats with any wallet address.
+                Finding people and communities in the Ink ecosystem is coming soon. For now, start a chat from
+                Chats with any wallet address.
               </p>
             </>
           )}
@@ -343,7 +329,11 @@ export function Messenger({ client }: { client: XmtpClient }) {
                 inbox.blocked.map((t) => (
                   <div className="panel__row" key={t.id}>
                     <span title={t.peerAddress}>{threadTitle(t, names)}</span>
-                    <button type="button" className="btn" onClick={() => void inbox.unblock(t).catch(() => undefined)}>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => void inbox.unblock(t).catch(() => undefined)}
+                    >
                       Unblock
                     </button>
                   </div>
@@ -366,7 +356,9 @@ export function Messenger({ client }: { client: XmtpClient }) {
             aria-current={tab === t.id ? "page" : undefined}
             onClick={() => setTab(t.id)}
           >
-            <span className="tabbar__icon" aria-hidden="true">{ICONS[t.id]}</span>
+            <span className="tabbar__icon" aria-hidden="true">
+              {ICONS[t.id]}
+            </span>
             {t.label}
             {t.id === "chats" && unreadCount > 0 && (
               <span className="tabbar__badge">{unreadCount > 9 ? "9+" : unreadCount}</span>
@@ -375,158 +367,6 @@ export function Messenger({ client }: { client: XmtpClient }) {
         ))}
       </nav>
     </div>
-  );
-}
-
-type Tab = "chats" | "contacts" | "discover" | "settings";
-
-const ICON_PROPS = {
-  width: 22,
-  height: 22,
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.8,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-  "aria-hidden": true,
-};
-
-const ICONS: Record<Tab | "wallet", ReactElement> = {
-  chats: (
-    <svg {...ICON_PROPS}>
-      <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z" />
-    </svg>
-  ),
-  contacts: (
-    <svg {...ICON_PROPS}>
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21a8 8 0 0 1 16 0" />
-    </svg>
-  ),
-  discover: (
-    <svg {...ICON_PROPS}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="m15.5 8.5-2 5-5 2 2-5 5-2Z" />
-    </svg>
-  ),
-  settings: (
-    <svg {...ICON_PROPS}>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
-    </svg>
-  ),
-  wallet: (
-    <svg {...ICON_PROPS}>
-      <path d="M3 7a2 2 0 0 1 2-2h12v4" />
-      <path d="M3 7v11a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2Z" />
-      <circle cx="16.5" cy="14.5" r="1" />
-    </svg>
-  ),
-};
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: "chats", label: "Chats" },
-  { id: "contacts", label: "Contacts" },
-  { id: "discover", label: "Discover" },
-  { id: "settings", label: "Settings" },
-];
-
-function Compose({
-  lookup,
-  selfAddress,
-  onOpen,
-}: {
-  lookup: (input: string) => Promise<LookupResult>;
-  selfAddress?: string;
-  onOpen: (address: string) => Promise<void>;
-}) {
-  const [value, setValue] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<LookupResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    setResult(null);
-    try {
-      if (selfAddress && value.trim().toLowerCase() === selfAddress.toLowerCase()) {
-        setResult({ state: "invalid", message: "That is your own wallet address." });
-        return;
-      }
-      const r = await lookup(value);
-      setResult(r);
-      if (r.state === "reachable") {
-        await onOpen(r.address);
-        setValue("");
-        setResult(null);
-      }
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form className="compose" onSubmit={submit}>
-      <label htmlFor="recipient" className="label">
-        New message
-      </label>
-      <div className="compose__row">
-        <input
-          id="recipient"
-          className="input input--mono"
-          placeholder="Wallet address (0x…) or ENS name"
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value);
-            setResult(null);
-          }}
-          spellCheck={false}
-          autoComplete="off"
-        />
-        <button className="btn btn--primary" disabled={busy || value.trim() === ""}>
-          {busy ? "Looking up…" : "Start"}
-        </button>
-      </div>
-      {result?.state === "invalid" && <p className="note note--error">{result.message}</p>}
-      {result?.state === "unreachable" && (
-        <p className="note note--error">
-          {shortAddress(result.address)} hasn’t enabled XMTP messaging yet, so it can’t receive
-          messages. Ask them to open INKSIGNAL (or any XMTP app) and sign in with that wallet.
-        </p>
-      )}
-      {error && <p className="note note--error">{error}</p>}
-    </form>
-  );
-}
-
-function QuoteBlock({
-  reply,
-  original,
-  author,
-}: {
-  reply: ReplyRef;
-  original: ChatMessage | undefined;
-  author: string;
-}) {
-  const text = original?.text ?? reply.text;
-  return (
-    <button
-      type="button"
-      className="quote"
-      onClick={() =>
-        document
-          .getElementById(`msg-${reply.id}`)
-          ?.scrollIntoView({ behavior: "smooth", block: "center" })
-      }
-    >
-      <span className="quote__who">{author}</span>
-      <span className="quote__text">{text ?? "Original message unavailable"}</span>
-    </button>
   );
 }
 
@@ -641,48 +481,55 @@ function ThreadView({
     <>
       <header className="chat__header">
         <button className="chat__back" type="button" onClick={onBack} aria-label="Close conversation">
-          <span className="chat__back-m" aria-hidden="true">←</span>
-          <span className="chat__back-d" aria-hidden="true">✕</span>
+          <span className="chat__back-m" aria-hidden="true">
+            ←
+          </span>
+          <span className="chat__back-d" aria-hidden="true">
+            ✕
+          </span>
         </button>
         <div className="chat__who">
-        <Avatar
-          seed={thread.peerInboxId}
-          label={nickname ?? thread.peerAddress ?? threadTitle(thread, names)}
-          size={40}
-        />
-        <div className="chat__whotext">
-        {editingName ? (
-          <form className="chat__nameform" onSubmit={saveNickname}>
-            <input
-              className="input"
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              maxLength={CONTACT_NAME_MAX}
-              placeholder="Name for this contact"
-              aria-label="Contact name"
-              autoFocus
-            />
-            <button className="chat__link chat__link--strong" type="submit">Save</button>
-            <button className="chat__link" type="button" onClick={() => setEditingName(false)}>
-              Cancel
-            </button>
-          </form>
-        ) : (
-          <div className="chat__titlerow">
-            <strong title={thread.peerAddress}>{threadTitle(thread, names)}</strong>
-            <button
-              className="chat__link"
-              onClick={() => {
-                setNameDraft(nickname ?? "");
-                setEditingName(true);
-              }}
-            >
-              {nickname ? "Rename" : "Add name"}
-            </button>
+          <Avatar
+            seed={thread.peerInboxId}
+            label={nickname ?? thread.peerAddress ?? threadTitle(thread, names)}
+            size={40}
+          />
+          <div className="chat__whotext">
+            {editingName ? (
+              <form className="chat__nameform" onSubmit={saveNickname}>
+                <input
+                  className="input"
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  maxLength={CONTACT_NAME_MAX}
+                  placeholder="Name for this contact"
+                  aria-label="Contact name"
+                  autoFocus
+                />
+                <button className="chat__link chat__link--strong" type="submit">
+                  Save
+                </button>
+                <button className="chat__link" type="button" onClick={() => setEditingName(false)}>
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <div className="chat__titlerow">
+                <strong title={thread.peerAddress}>{threadTitle(thread, names)}</strong>
+                <button
+                  type="button"
+                  className="chat__link"
+                  onClick={() => {
+                    setNameDraft(nickname ?? "");
+                    setEditingName(true);
+                  }}
+                >
+                  {nickname ? "Rename" : "Add name"}
+                </button>
+              </div>
+            )}
+            {thread.peerAddress && <span className="chat__full">{thread.peerAddress}</span>}
           </div>
-        )}
-        {thread.peerAddress && <span className="chat__full">{thread.peerAddress}</span>}
-        </div>
         </div>
       </header>
 
@@ -702,75 +549,81 @@ function ThreadView({
             const newDay = i === 0 || messages[i - 1].sentAt.toDateString() !== m.sentAt.toDateString();
             return (
               <Fragment key={m.id}>
-              {newDay && <div className="daysep">{dayLabel(m.sentAt)}</div>}
-              <div id={`msg-${m.id}`} className={`msg${mine ? " msg--me" : ""}`}>
-                <div className="msg__row">
-                  <div className={`bubble${mine ? " bubble--me" : ""}`}>
-                    {m.replyTo && (
-                      <QuoteBlock
-                        reply={m.replyTo}
-                        original={byId.get(m.replyTo.id)}
-                        author={authorLabel(byId.get(m.replyTo.id)?.senderInboxId ?? m.replyTo.senderInboxId)}
-                      />
-                    )}
-                    <p>{m.text}</p>
-                    <time>
-                      {timeLabel(m.sentAt)}
-                      {mine && m.id === lastMineId && <span className="sent"> · ✓ Sent</span>}
-                    </time>
-                  </div>
-                  <button
-                    className="picker__toggle"
-                    aria-label="Reply"
-                    title="Reply"
-                    onClick={() => {
-                      setReplyingTo(m);
-                      composerRef.current?.focus();
-                    }}
-                  >
-                    ↩
-                  </button>
-                  <div className="picker">
+                {newDay && <div className="daysep">{dayLabel(m.sentAt)}</div>}
+                <div id={`msg-${m.id}`} className={`msg${mine ? " msg--me" : ""}`}>
+                  <div className="msg__row">
+                    <div className={`bubble${mine ? " bubble--me" : ""}`}>
+                      {m.replyTo && (
+                        <QuoteBlock
+                          reply={m.replyTo}
+                          original={byId.get(m.replyTo.id)}
+                          author={authorLabel(
+                            byId.get(m.replyTo.id)?.senderInboxId ?? m.replyTo.senderInboxId,
+                          )}
+                        />
+                      )}
+                      <p>{m.text}</p>
+                      <time>
+                        {timeLabel(m.sentAt)}
+                        {mine && m.id === lastMineId && <span className="sent"> · ✓ Sent</span>}
+                      </time>
+                    </div>
                     <button
+                      type="button"
                       className="picker__toggle"
-                      aria-label="Add reaction"
-                      aria-expanded={pickerFor === m.id}
-                      onClick={() => setPickerFor(pickerFor === m.id ? null : m.id)}
+                      aria-label="Reply"
+                      title="Reply"
+                      onClick={() => {
+                        setReplyingTo(m);
+                        composerRef.current?.focus();
+                      }}
                     >
-                      ☺
+                      ↩
                     </button>
-                    {pickerFor === m.id && (
-                      <div className="picker__menu" role="menu">
-                        {REACTION_EMOJI.map((emoji) => (
-                          <button
-                            key={emoji}
-                            role="menuitem"
-                            className="picker__emoji"
-                            onClick={() => void toggleReaction(m, emoji)}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {chips.length > 0 && (
-                  <div className="reactions">
-                    {chips.map(([emoji, who]) => (
+                    <div className="picker">
                       <button
-                        key={emoji}
-                        className={`reaction${who.has(selfInboxId) ? " reaction--mine" : ""}`}
-                        onClick={() => void toggleReaction(m, emoji)}
-                        aria-label={`${emoji} ${who.size}`}
+                        type="button"
+                        className="picker__toggle"
+                        aria-label="Add reaction"
+                        aria-expanded={pickerFor === m.id}
+                        onClick={() => setPickerFor(pickerFor === m.id ? null : m.id)}
                       >
-                        {emoji}
-                        {who.size > 1 && <span>{who.size}</span>}
+                        ☺
                       </button>
-                    ))}
+                      {pickerFor === m.id && (
+                        <div className="picker__menu" role="menu">
+                          {REACTION_EMOJI.map((emoji) => (
+                            <button
+                              type="button"
+                              key={emoji}
+                              role="menuitem"
+                              className="picker__emoji"
+                              onClick={() => void toggleReaction(m, emoji)}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
+                  {chips.length > 0 && (
+                    <div className="reactions">
+                      {chips.map(([emoji, who]) => (
+                        <button
+                          type="button"
+                          key={emoji}
+                          className={`reaction${who.has(selfInboxId) ? " reaction--mine" : ""}`}
+                          onClick={() => void toggleReaction(m, emoji)}
+                          aria-label={`${emoji} ${who.size}`}
+                        >
+                          {emoji}
+                          {who.size > 1 && <span>{who.size}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </Fragment>
             );
           })
@@ -781,42 +634,46 @@ function ThreadView({
       {isRequest ? (
         <div className="note note--request" role="region" aria-label="Message request">
           <p>This is a message request. Nothing is sent until you accept.</p>
-          <button type="button" className="btn btn--primary" onClick={onAccept}>Accept</button>{" "}
-          <button type="button" className="btn" onClick={onBlock}>Block</button>
-        </div>
-      ) : (
-      <form className="composer" onSubmit={submit}>
-        {replyingTo && (
-          <div className="replybar">
-            <div className="replybar__body">
-              <span className="replybar__who">Replying to {authorLabel(replyingTo.senderInboxId)}</span>
-              <span className="replybar__text">{replyingTo.text}</span>
-            </div>
-            <button
-              type="button"
-              className="replybar__close"
-              aria-label="Cancel reply"
-              onClick={() => setReplyingTo(null)}
-            >
-              ✕
-            </button>
-          </div>
-        )}
-        {error && <p className="note note--error">{error}</p>}
-        <div className="compose__row">
-          <input
-            ref={composerRef}
-            className="input"
-            placeholder="Write an encrypted message…"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            autoFocus
-          />
-          <button className="btn btn--primary" disabled={sending || text.trim() === ""}>
-            {sending ? "Sending…" : "Send"}
+          <button type="button" className="btn btn--primary" onClick={onAccept}>
+            Accept
+          </button>{" "}
+          <button type="button" className="btn" onClick={onBlock}>
+            Block
           </button>
         </div>
-      </form>
+      ) : (
+        <form className="composer" onSubmit={submit}>
+          {replyingTo && (
+            <div className="replybar">
+              <div className="replybar__body">
+                <span className="replybar__who">Replying to {authorLabel(replyingTo.senderInboxId)}</span>
+                <span className="replybar__text">{replyingTo.text}</span>
+              </div>
+              <button
+                type="button"
+                className="replybar__close"
+                aria-label="Cancel reply"
+                onClick={() => setReplyingTo(null)}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          {error && <p className="note note--error">{error}</p>}
+          <div className="compose__row">
+            <input
+              ref={composerRef}
+              className="input"
+              placeholder="Write an encrypted message…"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              autoFocus
+            />
+            <button className="btn btn--primary" type="submit" disabled={sending || text.trim() === ""}>
+              {sending ? "Sending…" : "Send"}
+            </button>
+          </div>
+        </form>
       )}
     </>
   );
