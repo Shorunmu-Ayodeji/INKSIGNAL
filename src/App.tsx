@@ -1,4 +1,5 @@
 import { useAccount } from "wagmi";
+import { Analytics } from "@vercel/analytics/react";
 import { Brand } from "./components/Brand";
 import { AccountBar, ConnectOptions } from "./components/Wallet";
 import { Messenger } from "./components/Messenger";
@@ -77,6 +78,7 @@ export function App() {
         INKSIGNAL by 9thstreet · Messages are encrypted and delivered over XMTP · Ink is the wallet network,
         nothing is written on-chain
       </footer>
+      <Analytics />
     </div>
   );
 }
