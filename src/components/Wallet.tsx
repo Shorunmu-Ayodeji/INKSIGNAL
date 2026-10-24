@@ -12,7 +12,21 @@ export function ConnectOptions() {
   const options = discovered.length > 0 ? discovered : "ethereum" in window ? connectors : [];
 
   if (options.length === 0) {
-    return <p className="note">No browser wallet detected. Install a wallet extension and reload.</p>;
+    const page = window.location.href;
+    const links = [
+      { name: "MetaMask", href: `https://metamask.app.link/dapp/${page.replace(/^https?:\/\//, "")}` },
+      { name: "Coinbase Wallet", href: `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(page)}` },
+    ];
+    return (
+      <div className="connect-options">
+        <p className="note">No wallet detected. Install a wallet extension, or open this page in your wallet app.</p>
+        {links.map((l) => (
+          <a key={l.name} className="btn btn--primary" href={l.href}>
+            Open in {l.name}
+          </a>
+        ))}
+      </div>
+    );
   }
 
   return (

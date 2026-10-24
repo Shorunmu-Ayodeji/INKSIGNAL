@@ -1,12 +1,15 @@
 import { createConfig, http } from "wagmi";
-import { injected } from "wagmi/connectors";
+import { injected, walletConnect } from "wagmi/connectors";
 import { ink } from "viem/chains";
 
+const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
+
 // Wallets are discovered through EIP-6963; `injected()` is the fallback for
-// browsers whose wallet only exposes window.ethereum.
+// browsers whose wallet only exposes window.ethereum. WalletConnect covers
+// mobile browsers, where no wallet is injected.
 export const wagmiConfig = createConfig({
   chains: [ink],
-  connectors: [injected()],
+  connectors: projectId ? [injected(), walletConnect({ projectId })] : [injected()],
   transports: {
     [ink.id]: http(),
   },

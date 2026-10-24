@@ -39,6 +39,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.5",
+    "@walletconnect/ethereum-provider": "^2.26.0",
     "@xmtp/browser-sdk": "^7.1.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
